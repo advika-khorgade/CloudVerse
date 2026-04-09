@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Real-Time Organ Donation Match & Allocation System
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    CodeUri: ../lambda/
+    Environment:
+      Variables:
+        DONORS_TABLE:      !Ref DonorsTable
+        RECIPIENTS_TABLE:  !Ref RecipientsTable
+        ALLOCATIONS_TABLE: !Ref AllocationsTable
+
+Resources:
+
+  # ─── DynamoDB Tables ──────────────────────────────────────────────────────────
+
+  DonorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Donors"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: donorId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: donorId, KeyType: HASH }
+
+  RecipientsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Recipients"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: recipientId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: recipientId, KeyType: HASH }
+
+  AllocationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Allocations"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: allocationId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: allocationId, KeyType: HASH }
+
+  # ─── Lambda Functions ─────────────────────────────────────────────────────────
+
+  AddDonorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: addDonor.handler
+      Policies: [AmazonDynamoDBFullAccess]
+      Events:
+        Api: { Type: Api, Properties: { Path: /addDonor, Method: POST, RestApiId: !Ref OrganApi } }
+
+  AddRecipientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: addRecipient.handler
+      Policies: [AmazonDynamoDBFullAccess]
+      Events:
+        Api: { Type: Api, Properties: { Path: /addRecipient, Method: POST, RestApiId: !Ref OrganApi } }
+
+  GetDonorsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: getDonors.handler
+      Policies: [AmazonDynamoDBReadOnlyAccess]
+      Events:
+        Api: { Type: Api, Properties: { Path: /getDonors, Method: GET, RestApiId: !Ref OrganApi } }
+
+  GetRecipientsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: getRecipients.handler
+      Policies: [AmazonDynamoDBReadOnlyAccess]
+      Events:
+        Api: { Type: Api, Properties: { Path: /getRecipients, Method: GET, RestApiId: !Ref OrganApi } }
+
+  GetAllocationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: getAllocations.handler
+      Policies: [AmazonDynamoDBReadOnlyAccess]
+      Events:
+        Api: { Type: Api, Properties: { Path: /allocations, Method: GET, RestApiId: !Ref OrganApi } }
+
+  AllocateOrganFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: allocateOrgan.handler
+      Policies: [AmazonDynamoDBFullAccess]
+      Events:
+        Api: { Type: Api, Properties: { Path: /allocateOrgan, Method: POST, RestApiId: !Ref OrganApi } }
+
+  ExpiryCheckerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: expiryChecker.handler
+      Policies: [AmazonDynamoDBFullAccess]
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Description: Automatically expire stale organ donors
+
+  # ─── API Gateway ──────────────────────────────────────────────────────────────
+
+  OrganApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+Outputs:
+  ApiUrl:
+    Description: "Paste this into NEXT_PUBLIC_API_URL in your .env.local"
+    Value: !Sub "https://${OrganApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+
+  DonorsTableName:
+    Value: !Ref DonorsTable
+
+  RecipientsTableName:
+    Value: !Ref RecipientsTable
+
+  AllocationsTableName:
+    Value: !Ref AllocationsTable
